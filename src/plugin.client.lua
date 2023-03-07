@@ -49,8 +49,7 @@ gui.Textbox.new({
 gui.ListFrame.new({Height = 5})
 
 local CreateR6Rig = gui.Button.new({
-    Text = "Create R6 Rig",
-    ButtonSize = 0.4
+    Text = "Create R6 Rig"
 })
 
 CreateR6Rig:Clicked(function()
@@ -61,8 +60,7 @@ CreateR6Rig:Clicked(function()
 end)
 
 local CreateR15Rig = gui.Button.new({
-    Text = "Create R15 Rig",
-    ButtonSize = 0.4
+    Text = "Create R15 Rig"
 })
 
 CreateR15Rig:Clicked(function()
@@ -72,7 +70,36 @@ CreateR15Rig:Clicked(function()
     HistoryService:SetWaypoint("Inserted R15 Rig");
 end)
 
+gui.ListFrame.new({Height = 5})
+
+local InputPlayerID = gui.InputField.new({
+    Placeholder = "Player ID Here",
+    NoDropdown = true
+})
+
+gui.Labeled.new({
+    Text = "Insert Avatar by ID:",
+    Objects = InputPlayerID
+})
+
+local InsertPlayerIDButton = gui.Button.new({
+    Text = "Insert",
+    ButtonSize = 0.5,
+    Disabled = true
+})
+
+InputPlayerID:Changed(function(input)
+    InsertPlayerIDButton:SetDisabled(input == "")
+end)
+
 gui.ListFrame.new({Height = 10})
+
+InsertPlayerIDButton:Clicked(function()
+    local Camera = workspace.CurrentCamera
+    local NewRig = RigInserter.InsertByID(InputPlayerID.Value, CFrame.new((Camera.CFrame + Camera.CFrame.LookVector * 10).Position));
+    SelectionService:Set({NewRig})
+    HistoryService:SetWaypoint("Inserted Character Rig");
+end)
 
 gui.Section.new({
     Text = "Rigging",
@@ -114,18 +141,15 @@ local function AlignModel(model)
     local Parent = model.Parent
     ResetPivot(model);
     model.PrimaryPart = FindHandle(model, true)
-    local TempPart
+    local NewMid
     if not model.PrimaryPart then
-        TempPart = Instance.new("Part", model)
+        NewMid = Instance.new("Part", model)
+        NewMid.Name = "Middle"
         local cf, _  = model.GetBoundingBox()
-        TempPart.CFrame = cf
-        model.PrimaryPart = TempPart
+        NewMid.CFrame = cf
+        model.PrimaryPart = NewMid
     end
     model:SetPrimaryPartCFrame(Parent.CFrame);
-    if TempPart then
-        model.PrimaryPart = nil
-        TempPart.Parent = nil
-    end
     ResetPivot(model);
 end
 
@@ -156,25 +180,66 @@ local CreateAccessoryButton = gui.Button.new({
     Disabled = true
 })
 
+local function CreateHandle(model)
+    local Handle = model.Parent:Clone()
+    Handle.Parent = model
+    Handle.Transparency = 1
+    Handle.Name = "Handle"
+    Handle:ClearAllChildren()
+    model.PrimaryPart = Handle
+    return Handle
+end
+
 CreateAccessoryButton:Clicked(function()
-    for _, v1 in pairs(SelectionService:Get()) do
+    for _, model in pairs(SelectionService:Get()) do
         local ValidModel = false
-        if v1.Parent and v1.Parent.Parent then
-            for _, v2 in pairs(v1.Parent.Parent:GetChildren()) do
-                if (v1:IsA("Model") or v1:IsA("BasePart")) and v1.Parent:IsA("Part") and v2:IsA("Humanoid") then
+        if model.Parent and model.Parent.Parent then
+            for _, v2 in pairs(model.Parent.Parent:GetChildren()) do
+                if (model:IsA("Model") or model:IsA("BasePart")) and model.Parent:IsA("Part") and v2:IsA("Humanoid") then
                     ValidModel = true
                     break
                 end
             end
         end
         if ValidModel then
-            local Handle = FindHandle(v1)
+            local NewAccessory = Instance.new("Accessory", model.Parent.Parent)
+            NewAccessory.Name = model.Name
+            local Handle = FindHandle(model)
             if not Handle then
-                Autoalign(v1)
-                Handle = FindHandle(v1)
+                Handle = CreateHandle(model)
+            end
+            --Handle.Parent = NewAccessory
+            Handle:ClearAllChildren()
+            Handle.Anchored = false
+            Handle.Name = "Handle"
+            for _, part in pairs(model:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.Anchored = false
+                    --part.Parent = NewAccessory
+                    if not (part == Handle) then
+                        local NewWeld = Instance.new("Weld", Handle)
+                        NewWeld.Name = part.Name
+                        NewWeld.Part0 = Handle
+                        NewWeld.C0 = Handle.CFrame:ToObjectSpace(part.CFrame)
+                        NewWeld.Part1 = part
+                    end
+                end
+            end
+            if AttachmentInput.Value ~= "" then
+                local BodyAttachment = AttachmentInput.Value[1]:Clone()
+                BodyAttachment.Parent = Handle
+            end
+            if model:IsA("Model") then
+                for _, v in pairs(model:GetChildren()) do
+                    v.Parent = NewAccessory
+                end
+                model.Parent = nil
+            else
+                Handle.Parent = NewAccessory
             end
         end
     end
+    HistoryService:SetWaypoint("Created Accessory");
 end)
 
 SelectionService.SelectionChanged:Connect(function()

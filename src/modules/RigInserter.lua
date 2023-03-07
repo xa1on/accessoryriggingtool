@@ -266,4 +266,13 @@ function m.Insert(rig, cf)
     return r6]]--
 end
 
+function m.InsertByID(id, cf)
+    local newRig = game.Players:CreateHumanoidModelFromUserId(id)
+    newRig:SetPrimaryPartCFrame(cf)
+    newRig.Humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+    newRig.Name = game.Players:GetNameFromUserIdAsync(id)
+    newRig.Parent = workspace
+    return newRig
+end
+
 return m
