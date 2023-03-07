@@ -8,6 +8,7 @@
 local gui = require(script.Parent.rblxgui.initialize)(plugin,"accessorytool")
 local SelectionService = game:GetService("Selection")
 local HistoryService = game:GetService("ChangeHistoryService")
+local RigInserter = require(script.Parent.modules.RigInserter)
 
 -- toolbar
 toolbar = plugin:CreateToolbar("accessorytool - something786")
@@ -32,7 +33,7 @@ local MainPage = gui.Page.new({
 })
 
 local MainPageFrame = gui.ScrollingFrame.new(nil, MainPage.Content)
-MainPageFrame:SetMain();
+MainPageFrame:SetMain()
 
 gui.Textbox.new({
     Text = "accessorytool",
@@ -41,15 +42,51 @@ gui.Textbox.new({
 })
 
 gui.Textbox.new({
-    Text = "Select an model or a group of models to get started",
+    Text = "Create a rig, or select model(s) to get started",
     Alignment = Enum.TextXAlignment.Center
 })
 
+gui.ListFrame.new({Height = 5})
+
+local CreateR6Rig = gui.Button.new({
+    Text = "Create R6 Rig",
+    ButtonSize = 0.4
+})
+
+CreateR6Rig:Clicked(function()
+    local Camera = workspace.CurrentCamera
+    local NewRig = RigInserter.Insert("R6", CFrame.new((Camera.CFrame + Camera.CFrame.LookVector * 10).Position));
+    SelectionService:Set({NewRig})
+    HistoryService:SetWaypoint("Inserted R6 Rig");
+end)
+
+local CreateR15Rig = gui.Button.new({
+    Text = "Create R15 Rig",
+    ButtonSize = 0.4
+})
+
+CreateR15Rig:Clicked(function()
+    local Camera = workspace.CurrentCamera
+    local NewRig = RigInserter.Insert("R15", CFrame.new((Camera.CFrame + Camera.CFrame.LookVector * 10).Position));
+    SelectionService:Set({NewRig})
+    HistoryService:SetWaypoint("Inserted R15 Rig");
+end)
+
+gui.ListFrame.new({Height = 10})
+
+gui.Section.new({
+    Text = "Rigging",
+    Open = true
+}):SetMain()
+
+gui.ListFrame.new({Height = 5})
 
 local AutoalignButton = gui.Button.new({
     Text = "Auto-align Selection",
     Disabled = true
 })
+
+
 
 local function FindHandle(model, acceptmiddle)
     if model:IsA("BasePart") then return model
@@ -109,10 +146,10 @@ end)
 
 local AttachmentInput = gui.InputField.new({
     Placeholder = "Attachment",
-    ClearText = true,
+    DisableEditing = true
 })
 
-local AttachmentLabel = gui.Labeled.new({Text = "Use Attachment", Object = AttachmentInput, DisableEditing = true, Disabled = true})
+local AttachmentLabel = gui.Labeled.new({Text = "Use Attachment", Object = AttachmentInput, Disabled = true})
 
 local CreateAccessoryButton = gui.Button.new({
     Text = "Create Accessory",
