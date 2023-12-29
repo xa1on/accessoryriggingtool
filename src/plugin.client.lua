@@ -1,23 +1,27 @@
 --[[
-    [accessorytool]
+    [riggingtool]
     something#7597
     
 ]]--
 
 -- dependencies
-local gui = require(script.Parent.rblxgui.initialize)(plugin,"accessorytool")
+local gui = require(script.Parent.rblxgui.initialize)(plugin,"riggingtool")
 local SelectionService = game:GetService("Selection")
 local HistoryService = game:GetService("ChangeHistoryService")
 local RigInserter = require(script.Parent.modules.RigInserter)
 
+local SelectedActions = {}
+local ClonedWelds = {}
+local Attachments = {}
+
 -- toolbar
-toolbar = plugin:CreateToolbar("accessorytool - something786")
+toolbar = plugin:CreateToolbar("riggingtool - something786")
 
 -- toggle widget
 local b_ToggleWidget = toolbar:CreateButton("toggle","toggle plugin widget","")
 
 local Widget = gui.PluginWidget.new({
-    ID = "accessorytool",
+    ID = "riggingtool",
     Enabled = false,
     DockState = Enum.InitialDockState.Float
 })
@@ -36,7 +40,7 @@ local MainPageFrame = gui.ScrollingFrame.new(nil, MainPage.Content)
 MainPageFrame:SetMain()
 
 gui.Textbox.new({
-    Text = "accessorytool",
+    Text = "riggingtool",
     Font = Enum.Font.SourceSansBold,
     Alignment = Enum.TextXAlignment.Center
 })
@@ -46,29 +50,35 @@ gui.Textbox.new({
     Alignment = Enum.TextXAlignment.Center
 })
 
-gui.ListFrame.new({Height = 5})
+gui.ListFrame.new({Height = 10})
+
+gui.Section.new({
+    Text = "Create Rig",
+    Open = true
+}):SetMain()
+
+gui.Textbox.new({
+    Text = "Insert a Template Rig:",
+    Font = Enum.Font.SourceSansBold,
+    Alignment = Enum.TextXAlignment.Center
+})
+
+local RigButtonFrame = gui.ListFrame.new()
 
 local CreateR6Rig = gui.Button.new({
-    Text = "Create R6 Rig"
-})
-
-CreateR6Rig:Clicked(function()
-    local Camera = workspace.CurrentCamera
-    local NewRig = RigInserter.Insert("R6", CFrame.new((Camera.CFrame + Camera.CFrame.LookVector * 10).Position));
-    SelectionService:Set({NewRig})
-    HistoryService:SetWaypoint("Inserted R6 Rig");
-end)
+    Text = "R6",
+    ButtonSize = 0.9
+}, RigButtonFrame.Content)
 
 local CreateR15Rig = gui.Button.new({
-    Text = "Create R15 Rig"
-})
+    Text = "R15",
+    ButtonSize = 0.9
+}, RigButtonFrame.Content)
 
-CreateR15Rig:Clicked(function()
-    local Camera = workspace.CurrentCamera
-    local NewRig = RigInserter.Insert("R15", CFrame.new((Camera.CFrame + Camera.CFrame.LookVector * 10).Position));
-    SelectionService:Set({NewRig})
-    HistoryService:SetWaypoint("Inserted R15 Rig");
-end)
+local CreateS15Rig = gui.Button.new({
+    Text = "S15",
+    ButtonSize = 0.9
+}, RigButtonFrame.Content)
 
 gui.ListFrame.new({Height = 5})
 
@@ -102,23 +112,54 @@ InsertPlayerIDButton:Clicked(function()
 end)
 
 gui.Section.new({
-    Text = "Rigging",
+    Text = "Rigging Models",
     Open = true
-}):SetMain()
+}, MainPageFrame.Content):SetMain()
 
 gui.ListFrame.new({Height = 5})
+
+gui.Textbox.new({
+    Text = "Aligns middle of model with parent's CFrame",
+    Alignment = Enum.TextXAlignment.Center
+})
 
 local AutoalignButton = gui.Button.new({
     Text = "Auto-align Selection",
     Disabled = true
 })
 
+gui.Textbox.new({
+    Text = "Move accessory model into a body part\nSelect the model and choose an attachment.",
+    Alignment = Enum.TextXAlignment.Center
+}, gui.ListFrame.new({Height = 60}).Content)
 
+local AttachmentList = gui.Section.new({
+    Text = "Attachments",
+    Open = true
+})
+
+gui.ListFrame.new({Height = 5})
+
+local CreateAccessoryButton = gui.Button.new({
+    Text = "Create Accessory",
+    Disabled = true
+})
+
+
+
+
+local function AutoRigInsert(model)
+    local Camera = workspace.CurrentCamera
+    local NewRig = RigInserter.Insert(model, CFrame.new((Camera.CFrame + Camera.CFrame.LookVector * 10).Position));
+    SelectionService:Set({NewRig})
+    HistoryService:SetWaypoint("Inserted " .. model .. " Rig");
+end
 
 local function FindHandle(model, acceptmiddle)
     if model:IsA("BasePart") then return model
-    elseif not model:IsA("Model") then return nil end
-    local Handle = model.PrimaryPart
+    elseif not model:IsA("Model") and not model:IsA("Accessory") then return nil end
+    local Handle = nil
+    if model:IsA("Model") then Handle = model.PrimaryPart end
     for _, v in pairs(model:GetChildren()) do
         local lowerName = string.lower(v.Name)
         if v:IsA("BasePart") and (lowerName == "handle" or (acceptmiddle and lowerName == "middle")) then
@@ -144,7 +185,7 @@ local function AlignModel(model)
     local NewMid
     if not model.PrimaryPart then
         NewMid = Instance.new("Part", model)
-        NewMid.Name = "Middle"
+        NewMid.Name = "Handle"
         local cf, _  = model.GetBoundingBox()
         NewMid.CFrame = cf
         model.PrimaryPart = NewMid
@@ -161,25 +202,6 @@ local function Autoalign(model)
     end
 end
 
-AutoalignButton:Clicked(function()
-    for _, v in pairs(SelectionService:Get()) do
-        Autoalign(v)
-    end
-    HistoryService:SetWaypoint("Auto-aligned part");
-end)
-
-local AttachmentInput = gui.InputField.new({
-    Placeholder = "Attachment",
-    DisableEditing = true
-})
-
-local AttachmentLabel = gui.Labeled.new({Text = "Use Attachment", Object = AttachmentInput, Disabled = true})
-
-local CreateAccessoryButton = gui.Button.new({
-    Text = "Create Accessory",
-    Disabled = true
-})
-
 local function CreateHandle(model)
     local Handle = model.Parent:Clone()
     Handle.Parent = model
@@ -190,8 +212,92 @@ local function CreateHandle(model)
     return Handle
 end
 
+local function SelectionChanged(Selection)
+    --local CheckSelection = not(#Selection > 0)
+    local CompatibleAlignment = false
+    local CompatibleAccessory = false
+    CreateAccessoryButton.Textbox.Text = "Create Accessory - "
+    for _, v1 in pairs(AttachmentList.Content:GetChildren()) do
+        if not v1:IsA("UIListLayout") then
+            v1:Destroy()
+        end
+    end
+    for _, v1 in pairs(Selection) do
+        if v1:IsA("Model") or v1:IsA("BasePart") then
+            CompatibleAlignment = true
+        end
+        if v1.Parent and v1.Parent.Parent then
+            for _, v2 in pairs(v1.Parent.Parent:GetChildren()) do
+                if (v1:IsA("Model") or v1:IsA("BasePart")) and v1.Parent:IsA("Part") and v2:IsA("Humanoid") then
+                    CreateAccessoryButton.Textbox.Text ..= "(" .. v1.Name .. " → " .. v1.Parent.Name .. ") "
+                    CompatibleAccessory = true
+                    local AttachmentInput = gui.InputField.new({
+                        Placeholder = "Attachment",
+                        DisableEditing = true
+                    })
+                    local Container = gui.ListFrame.new(nil, AttachmentList.Content)
+                    gui.Labeled.new({
+                        Text = v1.Parent.Name .. " Attachment", 
+                        Object = AttachmentInput,
+                    }, Container.Content)
+                    Attachments[v1.Name] = AttachmentInput
+                    for _, v3 in pairs(v1.Parent:GetChildren()) do
+                        if v3:IsA("Attachment") then
+                            AttachmentInput:AddItem(v3)
+                            if AttachmentInput.Value == "" then AttachmentInput:SetValue(v3) end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    AutoalignButton:SetDisabled(not CompatibleAlignment)
+    CreateAccessoryButton:SetDisabled(not CompatibleAccessory)
+    --AttachmentLabel:SetDisabled(not CompatibleAccessory)
+end
+
+local function WeldModel(Model, Handle)
+    Handle = Handle or FindHandle(Model)
+    for _, part in pairs(Model:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Anchored = false
+            --part.Parent = NewAccessory
+            if not (part == Handle) then
+                local NewWeld = Instance.new("Motor6D", Handle)
+                NewWeld.Name = part.Name
+                NewWeld.Part0 = Handle
+                NewWeld.C0 = Handle.CFrame:ToObjectSpace(part.CFrame)
+                NewWeld.Part1 = part
+            end
+        end
+        if part:IsA("Weld") then
+            part.Parent = nil
+        end
+    end
+end
+
+CreateR6Rig:Clicked(function()
+    AutoRigInsert("R6")
+end)
+
+CreateR15Rig:Clicked(function()
+    AutoRigInsert("R15")
+end)
+
+CreateS15Rig:Clicked(function()
+    AutoRigInsert("S15")
+end)
+
+AutoalignButton:Clicked(function()
+    for _, v in pairs(SelectionService:Get()) do
+        Autoalign(v)
+    end
+    HistoryService:SetWaypoint("Auto-aligned part");
+end)
+
 CreateAccessoryButton:Clicked(function()
-    for _, model in pairs(SelectionService:Get()) do
+    local Selection = SelectionService:Get()
+    for _, model in pairs(Selection) do
         local ValidModel = false
         if model.Parent and model.Parent.Parent then
             for _, v2 in pairs(model.Parent.Parent:GetChildren()) do
@@ -212,19 +318,8 @@ CreateAccessoryButton:Clicked(function()
             Handle:ClearAllChildren()
             Handle.Anchored = false
             Handle.Name = "Handle"
-            for _, part in pairs(model:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.Anchored = false
-                    --part.Parent = NewAccessory
-                    if not (part == Handle) then
-                        local NewWeld = Instance.new("Weld", Handle)
-                        NewWeld.Name = part.Name
-                        NewWeld.Part0 = Handle
-                        NewWeld.C0 = Handle.CFrame:ToObjectSpace(part.CFrame)
-                        NewWeld.Part1 = part
-                    end
-                end
-            end
+            WeldModel(model, Handle)
+            local AttachmentInput = Attachments[model.Name]
             if AttachmentInput.Value ~= "" then
                 local BodyAttachment = AttachmentInput.Value[1]:Clone()
                 BodyAttachment.Parent = Handle
@@ -237,38 +332,43 @@ CreateAccessoryButton:Clicked(function()
             else
                 Handle.Parent = NewAccessory
             end
+            SelectionService:Add({NewAccessory})
         end
     end
     HistoryService:SetWaypoint("Created Accessory");
 end)
 
 SelectionService.SelectionChanged:Connect(function()
-    --local CheckSelection = not(#SelectionService:Get() > 0)
-    local CompatibleAlignment = false
-    local CompatibleAccessory = false
-    CreateAccessoryButton.Textbox.Text = "Create Accessory - "
-    AttachmentInput:SetValue()
-    AttachmentInput:ClearItems()
-    for _, v1 in pairs(SelectionService:Get()) do
-        if v1:IsA("Model") or v1:IsA("BasePart") then
-            CompatibleAlignment = true
-        end
-        if v1.Parent and v1.Parent.Parent then
-            for _, v2 in pairs(v1.Parent.Parent:GetChildren()) do
-                if (v1:IsA("Model") or v1:IsA("BasePart")) and v1.Parent:IsA("Part") and v2:IsA("Humanoid") then
-                    CreateAccessoryButton.Textbox.Text ..= "(" .. v1.Name .. " → " .. v1.Parent.Name .. ") "
-                    CompatibleAccessory = true
-                    for _, v3 in pairs(v1.Parent:GetChildren()) do
-                        if v3:IsA("Attachment") then
-                            AttachmentInput:AddItem(v3)
-                            if AttachmentInput.Value == "" then AttachmentInput:SetValue(v3) end
+    for _, action in SelectedActions do
+        action:Disconnect()
+    end
+    SelectedActions = {}
+    ClonedWelds = {}
+    for index, v1 in pairs(SelectionService:Get()) do
+        SelectedActions[#SelectedActions+1] = v1.AncestryChanged:Connect(function()
+            if Widget.Content.Enabled then SelectionChanged({v1}) end
+        end)
+        if v1:IsA("Accessory") then
+            local Handle = FindHandle(v1)
+            if Handle then
+                for _, v2 in pairs(Handle:GetChildren()) do
+                    if v2:IsA("Motor6D") or v2:IsA("Weld") then
+                        local NewWeld = v2:Clone()
+                        NewWeld.Parent = nil
+                        if not ClonedWelds[index] then
+                            ClonedWelds[index] = {}
                         end
+                        ClonedWelds[index][#ClonedWelds[index]+1] = NewWeld
                     end
                 end
+                SelectedActions[#SelectedActions+1] = v1.AncestryChanged:Connect(function()
+                    for _, v2 in pairs(ClonedWelds[index]) do
+                        v2.Parent = Handle
+                    end
+                end)
             end
         end
     end
-    AutoalignButton:SetDisabled(not CompatibleAlignment)
-    CreateAccessoryButton:SetDisabled(not CompatibleAccessory)
-    AttachmentLabel:SetDisabled(not CompatibleAccessory)
+    if not Widget.Content.Enabled then return end
+    SelectionChanged(SelectionService:Get())
 end)
