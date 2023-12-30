@@ -10,9 +10,101 @@ local SelectionService = game:GetService("Selection")
 local HistoryService = game:GetService("ChangeHistoryService")
 local RigInserter = require(script.Parent.modules.RigInserter)
 
+local SelectedRig = ""
+local RigOptions = {}
 local SelectedActions = {}
 local ClonedWelds = {}
 local Attachments = {}
+
+
+
+-- Local Functions
+local function AutoRigInsert(model)
+    local Camera = workspace.CurrentCamera
+    local NewRig = RigInserter.Insert(model, CFrame.new((Camera.CFrame + Camera.CFrame.LookVector * 10).Position));
+    SelectionService:Set({NewRig})
+    HistoryService:SetWaypoint("Inserted " .. model .. " Rig");
+end
+
+local function FindHandle(model, acceptmiddle)
+    if model:IsA("BasePart") then return model
+    elseif not model:IsA("Model") and not model:IsA("Accessory") then return nil end
+    local Handle = nil
+    if model:IsA("Model") then Handle = model.PrimaryPart end
+    for _, v in pairs(model:GetChildren()) do
+        local lowerName = string.lower(v.Name)
+        if v:IsA("BasePart") and (lowerName == "handle" or (acceptmiddle and lowerName == "middle")) then
+            Handle = v
+        end
+    end
+    return Handle
+end
+
+local function ResetPivot(model)
+	local boundsCFrame = model:GetBoundingBox()
+	if model.PrimaryPart then
+		model.PrimaryPart.PivotOffset = model.PrimaryPart.CFrame:ToObjectSpace(boundsCFrame)
+	else
+		model.WorldPivot = boundsCFrame
+	end
+end
+
+local function AlignModel(model)
+    local Parent = model.Parent
+    model.PrimaryPart = FindHandle(model, true)
+    local NewMid
+    ResetPivot(model);
+    if not model.PrimaryPart then
+        NewMid = Instance.new("Part")
+        NewMid.Name = "Handle"
+        NewMid.Transparency = 1
+        NewMid.Size = Vector3.new(0.25,0.25,0.25)
+        NewMid.CFrame = model:GetModelCFrame()
+        NewMid.Parent = model
+        model.PrimaryPart = NewMid
+        print(NewMid.CFrame)
+    end
+    ResetPivot(model);
+    model:SetPrimaryPartCFrame(Parent.CFrame);
+end
+
+local function Autoalign(model)
+    if model:IsA("Model") then
+        AlignModel(model)
+    elseif model:IsA("BasePart") then
+        model.CFrame = model.Parent.CFrame;
+    end
+end
+
+local function CreateHandle(model)
+    local Handle = model.Parent:Clone()
+    Handle.Parent = model
+    Handle.Transparency = 1
+    Handle.Name = "Handle"
+    Handle:ClearAllChildren()
+    model.PrimaryPart = Handle
+    return Handle
+end
+
+local function WeldModel(Model, Handle)
+    Handle = Handle or FindHandle(Model)
+    for _, part in pairs(Model:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.Anchored = false
+            --part.Parent = NewAccessory
+            if not (part == Handle) then
+                local NewWeld = Instance.new("Motor6D", Handle)
+                NewWeld.Name = part.Name
+                NewWeld.Part0 = Handle
+                NewWeld.C0 = Handle.CFrame:ToObjectSpace(part.CFrame)
+                NewWeld.Part1 = part
+            end
+        end
+        if part:IsA("Weld") then
+            part.Parent = nil
+        end
+    end
+end
 
 -- toolbar
 toolbar = plugin:CreateToolbar("riggingtool - something786")
@@ -58,57 +150,64 @@ gui.Section.new({
 }):SetMain()
 
 gui.Textbox.new({
-    Text = "Insert a Template Rig:",
+    Text = "Insert a Rig:",
     Font = Enum.Font.SourceSansBold,
     Alignment = Enum.TextXAlignment.Center
 })
 
 local RigButtonFrame = gui.ListFrame.new()
+local FirstRig = true
 
-local CreateR6Rig = gui.Button.new({
-    Text = "R6",
-    ButtonSize = 0.9
-}, RigButtonFrame.Content)
-
-local CreateR15Rig = gui.Button.new({
-    Text = "R15",
-    ButtonSize = 0.9
-}, RigButtonFrame.Content)
-
-local CreateS15Rig = gui.Button.new({
-    Text = "S15",
-    ButtonSize = 0.9
-}, RigButtonFrame.Content)
+for _, rig in script.Parent.models.Rigs:GetChildren() do
+    local NewButton = gui.ToggleableButton.new({
+        Text = rig.Name,
+        ButtonSize = 0.9
+    }, RigButtonFrame.Content)
+    if FirstRig then
+        NewButton:SetValue(true)
+        SelectedRig = rig.Name
+        FirstRig = false
+    end
+    RigOptions[rig.Name] = NewButton
+    NewButton:Clicked(function()
+        SelectedRig = rig.Name
+        NewButton:SetValue(true)
+        for index, button in RigOptions do
+            if index ~= rig.Name then
+                button:SetValue(false)
+            end
+        end
+    end)
+end
 
 gui.ListFrame.new({Height = 5})
 
 local InputPlayerID = gui.InputField.new({
-    Placeholder = "Player ID Here",
+    Placeholder = "Template Rig",
     NoDropdown = true
 })
 
 gui.Labeled.new({
-    Text = "Insert Avatar by ID:",
+    Text = "Player ID:",
     Objects = InputPlayerID
 })
 
-local InsertPlayerIDButton = gui.Button.new({
-    Text = "Insert",
-    ButtonSize = 0.5,
-    Disabled = true
+local InsertRigButton = gui.Button.new({
+    Text = "Insert Rig",
+    ButtonSize = 0.5
 })
-
-InputPlayerID:Changed(function(input)
-    InsertPlayerIDButton:SetDisabled(input == "")
-end)
 
 gui.ListFrame.new({Height = 10})
 
-InsertPlayerIDButton:Clicked(function()
-    local Camera = workspace.CurrentCamera
-    local NewRig = RigInserter.InsertByID(InputPlayerID.Value, CFrame.new((Camera.CFrame + Camera.CFrame.LookVector * 10).Position));
-    SelectionService:Set({NewRig})
-    HistoryService:SetWaypoint("Inserted Character Rig");
+InsertRigButton:Clicked(function()
+    if InputPlayerID.Value == "" then
+        AutoRigInsert(SelectedRig)
+    else
+        local Camera = workspace.CurrentCamera
+        local NewRig = RigInserter.InsertByID(InputPlayerID.Value, CFrame.new((Camera.CFrame + Camera.CFrame.LookVector * 10).Position));
+        SelectionService:Set({NewRig})
+        HistoryService:SetWaypoint("Inserted Character Rig");
+    end
 end)
 
 gui.Section.new({
@@ -147,70 +246,6 @@ local CreateAccessoryButton = gui.Button.new({
 
 
 
-
-local function AutoRigInsert(model)
-    local Camera = workspace.CurrentCamera
-    local NewRig = RigInserter.Insert(model, CFrame.new((Camera.CFrame + Camera.CFrame.LookVector * 10).Position));
-    SelectionService:Set({NewRig})
-    HistoryService:SetWaypoint("Inserted " .. model .. " Rig");
-end
-
-local function FindHandle(model, acceptmiddle)
-    if model:IsA("BasePart") then return model
-    elseif not model:IsA("Model") and not model:IsA("Accessory") then return nil end
-    local Handle = nil
-    if model:IsA("Model") then Handle = model.PrimaryPart end
-    for _, v in pairs(model:GetChildren()) do
-        local lowerName = string.lower(v.Name)
-        if v:IsA("BasePart") and (lowerName == "handle" or (acceptmiddle and lowerName == "middle")) then
-            Handle = v
-        end
-    end
-    return Handle
-end
-
-local function ResetPivot(model)
-	local boundsCFrame = model:GetBoundingBox()
-	if model.PrimaryPart then
-		model.PrimaryPart.PivotOffset = model.PrimaryPart.CFrame:ToObjectSpace(boundsCFrame)
-	else
-		model.WorldPivot = boundsCFrame
-	end
-end
-
-local function AlignModel(model)
-    local Parent = model.Parent
-    ResetPivot(model);
-    model.PrimaryPart = FindHandle(model, true)
-    local NewMid
-    if not model.PrimaryPart then
-        NewMid = Instance.new("Part", model)
-        NewMid.Name = "Handle"
-        local cf, _  = model.GetBoundingBox()
-        NewMid.CFrame = cf
-        model.PrimaryPart = NewMid
-    end
-    model:SetPrimaryPartCFrame(Parent.CFrame);
-    ResetPivot(model);
-end
-
-local function Autoalign(model)
-    if model:IsA("Model") then
-        AlignModel(model)
-    elseif model:IsA("BasePart") then
-        model.CFrame = model.Parent.CFrame;
-    end
-end
-
-local function CreateHandle(model)
-    local Handle = model.Parent:Clone()
-    Handle.Parent = model
-    Handle.Transparency = 1
-    Handle.Name = "Handle"
-    Handle:ClearAllChildren()
-    model.PrimaryPart = Handle
-    return Handle
-end
 
 local function SelectionChanged(Selection)
     --local CheckSelection = not(#Selection > 0)
@@ -255,38 +290,6 @@ local function SelectionChanged(Selection)
     CreateAccessoryButton:SetDisabled(not CompatibleAccessory)
     --AttachmentLabel:SetDisabled(not CompatibleAccessory)
 end
-
-local function WeldModel(Model, Handle)
-    Handle = Handle or FindHandle(Model)
-    for _, part in pairs(Model:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.Anchored = false
-            --part.Parent = NewAccessory
-            if not (part == Handle) then
-                local NewWeld = Instance.new("Motor6D", Handle)
-                NewWeld.Name = part.Name
-                NewWeld.Part0 = Handle
-                NewWeld.C0 = Handle.CFrame:ToObjectSpace(part.CFrame)
-                NewWeld.Part1 = part
-            end
-        end
-        if part:IsA("Weld") then
-            part.Parent = nil
-        end
-    end
-end
-
-CreateR6Rig:Clicked(function()
-    AutoRigInsert("R6")
-end)
-
-CreateR15Rig:Clicked(function()
-    AutoRigInsert("R15")
-end)
-
-CreateS15Rig:Clicked(function()
-    AutoRigInsert("S15")
-end)
 
 AutoalignButton:Clicked(function()
     for _, v in pairs(SelectionService:Get()) do
