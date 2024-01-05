@@ -1,5 +1,10 @@
 local m = {}
 local Rigs = script.Parent.Parent.models.Rigs
+m.Convert = {}
+
+for _, v in pairs(Rigs:GetChildren()) do
+    m.Convert[v.Name] = {}
+end
 
 function m.Insert(rig, cf)
     local newRig = Rigs[rig]:Clone()
@@ -273,6 +278,47 @@ function m.InsertByID(id, cf)
     newRig.Name = game.Players:GetNameFromUserIdAsync(id)
     newRig.Parent = workspace
     return newRig
+end
+
+function m.DetectRigType(model)
+    local HumanoidCheck = model:FindFirstChildWhichIsA("Humanoid")
+    if HumanoidCheck ~= nil then
+        if HumanoidCheck.RigType == Enum.HumanoidRigType.R15 then
+            for _, v in pairs(model:GetDescendants()) do
+                if v:IsA("WrapTarget") then
+                    return "S15"
+                end
+            end
+        end
+        return HumanoidCheck.RigType.Name
+    end
+    return nil
+end
+
+m.Convert.R15.S15 = function (rig)
+    local HumanoidCheck = rig:FindFirstChildWhichIsA("Humanoid")
+    if not HumanoidCheck or not m.DetectRigType(rig) == "R15" then
+        warn("Invalid Rig")
+        return
+    end
+    for _, v in pairs(Rigs.S15:GetDescendants()) do
+        if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
+            HumanoidCheck:ReplaceBodyPartR15(v.Name, v:Clone())
+        end
+    end
+end
+
+m.Convert.S15.R15 = function (rig)
+    local HumanoidCheck = rig:FindFirstChildWhichIsA("Humanoid")
+    if not HumanoidCheck or not m.DetectRigType(rig) == "S15" then
+        warn("Invalid Rig")
+        return
+    end
+    for _, v in pairs(Rigs.R15:GetDescendants()) do
+        if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
+            HumanoidCheck:ReplaceBodyPartR15(v.Name, v:Clone())
+        end
+    end
 end
 
 return m

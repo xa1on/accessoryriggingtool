@@ -8,20 +8,24 @@
 local gui = require(script.Parent.rblxgui.initialize)(plugin,"riggingtool")
 local SelectionService = game:GetService("Selection")
 local HistoryService = game:GetService("ChangeHistoryService")
-local RigInserter = require(script.Parent.modules.RigInserter)
+local RigModule = require(script.Parent.modules.RigModule)
 
-local SelectedRig = ""
+local SelectedRig = false
+local SelectedRigs = {}
+local ToggledRig = ""
 local RigOptions = {}
 local SelectedActions = {}
 local ClonedWelds = {}
 local Attachments = {}
+
+local SelectionChanged
 
 
 
 -- Local Functions
 local function AutoRigInsert(model)
     local Camera = workspace.CurrentCamera
-    local NewRig = RigInserter.Insert(model, CFrame.new((Camera.CFrame + Camera.CFrame.LookVector * 10).Position));
+    local NewRig = RigModule.Insert(model, CFrame.new((Camera.CFrame + Camera.CFrame.LookVector * 10).Position));
     SelectionService:Set({NewRig})
     HistoryService:SetWaypoint("Inserted " .. model .. " Rig");
 end
@@ -86,14 +90,14 @@ local function CreateHandle(model)
     return Handle
 end
 
-local function WeldModel(Model, Handle)
+local function WeldModel(Model, Handle, Animatable)
     Handle = Handle or FindHandle(Model)
     for _, part in pairs(Model:GetDescendants()) do
         if part:IsA("BasePart") then
             part.Anchored = false
             --part.Parent = NewAccessory
             if not (part == Handle) then
-                local NewWeld = Instance.new("Motor6D", Handle)
+                local NewWeld = Instance.new(if Animatable then "Motor6D" else "Weld", Handle)
                 NewWeld.Name = part.Name
                 NewWeld.Part0 = Handle
                 NewWeld.C0 = Handle.CFrame:ToObjectSpace(part.CFrame)
@@ -150,7 +154,7 @@ gui.Section.new({
 }):SetMain()
 
 gui.Textbox.new({
-    Text = "Insert a Rig:",
+    Text = "Select a Rig Type:",
     Font = Enum.Font.SourceSansBold,
     Alignment = Enum.TextXAlignment.Center
 })
@@ -165,12 +169,12 @@ for _, rig in script.Parent.models.Rigs:GetChildren() do
     }, RigButtonFrame.Content)
     if FirstRig then
         NewButton:SetValue(true)
-        SelectedRig = rig.Name
+        ToggledRig = rig.Name
         FirstRig = false
     end
     RigOptions[rig.Name] = NewButton
     NewButton:Clicked(function()
-        SelectedRig = rig.Name
+        ToggledRig = rig.Name
         NewButton:SetValue(true)
         for index, button in RigOptions do
             if index ~= rig.Name then
@@ -187,26 +191,39 @@ local InputPlayerID = gui.InputField.new({
     NoDropdown = true
 })
 
-gui.Labeled.new({
+local PlayerIDLabel = gui.Labeled.new({
     Text = "Player ID:",
     Objects = InputPlayerID
 })
 
 local InsertRigButton = gui.Button.new({
-    Text = "Insert Rig",
-    ButtonSize = 0.5
+    Text = "Insert Rig"
 })
 
 gui.ListFrame.new({Height = 10})
 
 InsertRigButton:Clicked(function()
-    if InputPlayerID.Value == "" then
-        AutoRigInsert(SelectedRig)
+    local DetectedRig
+    if not SelectedRig then
+        if InputPlayerID.Value == "" then
+            AutoRigInsert(ToggledRig)
+        else
+            local Camera = workspace.CurrentCamera
+            local NewRig = RigModule.InsertByID(InputPlayerID.Value, CFrame.new((Camera.CFrame + Camera.CFrame.LookVector * 10).Position));
+            SelectionService:Set({NewRig})
+            HistoryService:SetWaypoint("Inserted Character Rig");
+        end
     else
-        local Camera = workspace.CurrentCamera
-        local NewRig = RigInserter.InsertByID(InputPlayerID.Value, CFrame.new((Camera.CFrame + Camera.CFrame.LookVector * 10).Position));
-        SelectionService:Set({NewRig})
-        HistoryService:SetWaypoint("Inserted Character Rig");
+        for _, v in pairs(SelectedRigs) do
+            DetectedRig = RigModule.DetectRigType(v)
+            if RigModule.Convert[DetectedRig][ToggledRig] == nil then
+                gui.TextPrompt.new({Title = "Incompatible Conversion", Text = "Unable to convert " .. DetectedRig .. " to " .. ToggledRig, Buttons = {"OK"}})
+            else
+                RigModule.Convert[DetectedRig][ToggledRig](v)
+            end
+        end
+        SelectionChanged(SelectionService:Get())
+        HistoryService:SetWaypoint("Converted Character Rig");
     end
 end)
 
@@ -247,10 +264,13 @@ local CreateAccessoryButton = gui.Button.new({
 
 
 
-local function SelectionChanged(Selection)
+SelectionChanged = function(Selection)
     --local CheckSelection = not(#Selection > 0)
     local CompatibleAlignment = false
     local CompatibleAccessory = false
+    local CompatibleRig = false
+    local HumanoidCheck
+    SelectedRigs = {}
     CreateAccessoryButton.Textbox.Text = "Create Accessory - "
     for _, v1 in pairs(AttachmentList.Content:GetChildren()) do
         if not v1:IsA("UIListLayout") then
@@ -258,9 +278,11 @@ local function SelectionChanged(Selection)
         end
     end
     for _, v1 in pairs(Selection) do
+        -- Alignment Compatibility Check
         if v1:IsA("Model") or v1:IsA("BasePart") then
             CompatibleAlignment = true
         end
+        -- Accessory Compatibility Check
         if v1.Parent and v1.Parent.Parent then
             for _, v2 in pairs(v1.Parent.Parent:GetChildren()) do
                 if (v1:IsA("Model") or v1:IsA("BasePart")) and v1.Parent:IsA("Part") and v2:IsA("Humanoid") then
@@ -285,7 +307,35 @@ local function SelectionChanged(Selection)
                 end
             end
         end
+        -- Rig Compatibility Check
+        HumanoidCheck = RigModule.DetectRigType(v1)
+        
+        if HumanoidCheck ~= nil then
+            if not CompatibleRig then
+                SelectedRig = true
+                InsertRigButton.Textbox.Text = "Convert Rig"
+            end
+            CompatibleRig = true
+            InsertRigButton.Textbox.Text ..= " (\"" .. v1.Name .. "\": " .. HumanoidCheck .. ") "
+            SelectedRigs[#SelectedRigs+1] = v1
+        end
+        
+        
+        --[[v1:FindFirstChildWhichIsA("Humanoid")
+        if HumanoidCheck ~= nil then
+            if not CompatibleRig then
+                SelectedRig = true
+                InsertRigButton.Textbox.Text = "Convert Rig"
+            end
+            CompatibleRig = true
+            InsertRigButton.Textbox.Text ..= " (\"" .. v1.Name .. "\": " .. HumanoidCheck.RigType.Name .. ") "
+        end]]
     end
+    if not CompatibleRig and SelectedRig then
+        SelectedRig = false
+        InsertRigButton.Textbox.Text = "Insert Rig"
+    end
+    PlayerIDLabel:SetDisabled(CompatibleRig)
     AutoalignButton:SetDisabled(not CompatibleAlignment)
     CreateAccessoryButton:SetDisabled(not CompatibleAccessory)
     --AttachmentLabel:SetDisabled(not CompatibleAccessory)
@@ -321,7 +371,7 @@ CreateAccessoryButton:Clicked(function()
             Handle:ClearAllChildren()
             Handle.Anchored = false
             Handle.Name = "Handle"
-            WeldModel(model, Handle)
+            WeldModel(model, Handle, true)
             local AttachmentInput = Attachments[model.Name]
             if AttachmentInput.Value ~= "" then
                 local BodyAttachment = AttachmentInput.Value[1]:Clone()
