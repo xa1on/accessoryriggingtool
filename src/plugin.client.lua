@@ -30,20 +30,6 @@ local function AutoRigInsert(model)
     HistoryService:SetWaypoint("Inserted " .. model .. " Rig");
 end
 
-local function FindHandle(model, acceptmiddle)
-    if model:IsA("BasePart") then return model
-    elseif not model:IsA("Model") and not model:IsA("Accessory") then return nil end
-    local Handle = nil
-    if model:IsA("Model") then Handle = model.PrimaryPart end
-    for _, v in pairs(model:GetChildren()) do
-        local lowerName = string.lower(v.Name)
-        if v:IsA("BasePart") and (lowerName == "handle" or (acceptmiddle and lowerName == "middle")) then
-            Handle = v
-        end
-    end
-    return Handle
-end
-
 local function ResetPivot(model)
 	local boundsCFrame = model:GetBoundingBox()
 	if model.PrimaryPart then
@@ -55,7 +41,7 @@ end
 
 local function AlignModel(model)
     local Parent = model.Parent
-    model.PrimaryPart = FindHandle(model, true)
+    model.PrimaryPart = RigModule.FindHandle(model, true)
     local NewMid
     ResetPivot(model);
     if not model.PrimaryPart then
@@ -66,7 +52,6 @@ local function AlignModel(model)
         NewMid.CFrame = model:GetModelCFrame()
         NewMid.Parent = model
         model.PrimaryPart = NewMid
-        print(NewMid.CFrame)
     end
     ResetPivot(model);
     model:SetPrimaryPartCFrame(Parent.CFrame);
@@ -86,12 +71,14 @@ local function CreateHandle(model)
     Handle.Transparency = 1
     Handle.Name = "Handle"
     Handle:ClearAllChildren()
-    model.PrimaryPart = Handle
+    if model:IsA("Model") then
+        model.PrimaryPart = Handle
+    end
     return Handle
 end
 
 local function WeldModel(Model, Handle, Animatable)
-    Handle = Handle or FindHandle(Model)
+    Handle = Handle or RigModule.FindHandle(Model)
     for _, part in pairs(Model:GetDescendants()) do
         if part:IsA("BasePart") then
             part.Anchored = false
@@ -204,6 +191,7 @@ gui.ListFrame.new({Height = 10})
 
 InsertRigButton:Clicked(function()
     local DetectedRig
+    local NewRig
     if not SelectedRig then
         if InputPlayerID.Value == "" then
             AutoRigInsert(ToggledRig)
@@ -219,7 +207,13 @@ InsertRigButton:Clicked(function()
             if RigModule.Convert[DetectedRig][ToggledRig] == nil then
                 gui.TextPrompt.new({Title = "Incompatible Conversion", Text = "Unable to convert " .. DetectedRig .. " to " .. ToggledRig, Buttons = {"OK"}})
             else
-                RigModule.Convert[DetectedRig][ToggledRig](v)
+                NewRig = RigModule.Convert[DetectedRig][ToggledRig](v)
+                if NewRig ~= v then
+                    SelectionService:Add({NewRig[1]})
+                end
+                if not NewRig[2] then
+                    gui.TextPrompt.new({Title = "Missing Attachments", Text = "Some accessories were unable to be converted properly due to missing attachments\nand have been moved into seperate models.\n\nYou can convert them with the \"Create Accessory\" button.", Buttons = {"OK"}})
+                end
             end
         end
         SelectionChanged(SelectionService:Get())
@@ -270,6 +264,11 @@ SelectionChanged = function(Selection)
     local CompatibleAccessory = false
     local CompatibleRig = false
     local HumanoidCheck
+    local FoundAttachments = {}
+    local FoundAttachment = false
+    local MissingAttachment = false
+    local RigsMissingAttachments = {}
+    local RigAlreadyFound = false
     SelectedRigs = {}
     CreateAccessoryButton.Textbox.Text = "Create Accessory - "
     for _, v1 in pairs(AttachmentList.Content:GetChildren()) do
@@ -285,7 +284,15 @@ SelectionChanged = function(Selection)
         -- Accessory Compatibility Check
         if v1.Parent and v1.Parent.Parent then
             for _, v2 in pairs(v1.Parent.Parent:GetChildren()) do
-                if (v1:IsA("Model") or v1:IsA("BasePart")) and v1.Parent:IsA("Part") and v2:IsA("Humanoid") then
+                if (v1:IsA("Model") or v1:IsA("BasePart")) and v1.Parent:IsA("BasePart") and v2:IsA("Humanoid") then
+                    MissingAttachment = false
+                    FoundAttachments = {}
+                    FoundAttachment = false
+                    for _, v3 in pairs(script.Parent.models.Rigs[RigModule.DetectRigType(v1.Parent.Parent)][v1.Parent.Name]:GetChildren()) do
+                        if v3:IsA("Attachment") then
+                            FoundAttachments[#FoundAttachments+1] = v3.Name
+                        end
+                    end
                     CreateAccessoryButton.Textbox.Text ..= "(" .. v1.Name .. " → " .. v1.Parent.Name .. ") "
                     CompatibleAccessory = true
                     local AttachmentInput = gui.InputField.new({
@@ -294,14 +301,33 @@ SelectionChanged = function(Selection)
                     })
                     local Container = gui.ListFrame.new(nil, AttachmentList.Content)
                     gui.Labeled.new({
-                        Text = v1.Parent.Name .. " Attachment", 
+                        Text = v1.Name .. " Attachment",
                         Object = AttachmentInput,
                     }, Container.Content)
                     Attachments[v1.Name] = AttachmentInput
                     for _, v3 in pairs(v1.Parent:GetChildren()) do
                         if v3:IsA("Attachment") then
+                            for index, v4 in pairs(FoundAttachments) do
+                                if v4 == v3.Name then
+                                    table.remove(FoundAttachments, index)
+                                    FoundAttachment = true
+                                    break
+                                end
+                            end
+                            if not FoundAttachment then MissingAttachment = true end
                             AttachmentInput:AddItem(v3)
                             if AttachmentInput.Value == "" then AttachmentInput:SetValue(v3) end
+                        end
+                    end
+                    RigAlreadyFound = false
+                    if #FoundAttachments > 0 or MissingAttachment then
+                        for _, v3 in pairs(RigsMissingAttachments) do
+                            if v3 == v1.Parent.Parent then
+                                RigAlreadyFound = true
+                            end
+                        end
+                        if not RigAlreadyFound then
+                            RigsMissingAttachments[#RigsMissingAttachments+1] = v1.Parent.Parent
                         end
                     end
                 end
@@ -319,22 +345,38 @@ SelectionChanged = function(Selection)
             InsertRigButton.Textbox.Text ..= " (\"" .. v1.Name .. "\": " .. HumanoidCheck .. ") "
             SelectedRigs[#SelectedRigs+1] = v1
         end
-        
-        
-        --[[v1:FindFirstChildWhichIsA("Humanoid")
-        if HumanoidCheck ~= nil then
-            if not CompatibleRig then
-                SelectedRig = true
-                InsertRigButton.Textbox.Text = "Convert Rig"
-            end
-            CompatibleRig = true
-            InsertRigButton.Textbox.Text ..= " (\"" .. v1.Name .. "\": " .. HumanoidCheck.RigType.Name .. ") "
-        end]]
     end
     if not CompatibleRig and SelectedRig then
         SelectedRig = false
         InsertRigButton.Textbox.Text = "Insert Rig"
     end
+    local CurrentLimb
+    local NewAttachment
+    local PromptFixAttachment
+    for _, rig in RigsMissingAttachments do
+        PromptFixAttachment = gui.TextPrompt.new({
+            Title = '"' .. rig.Name .. '"' .. " - Missing Attachments",
+            Text = "\"" .. rig.Name .. "\" is missing some recommended attachments. Add missing attachments?",
+            Buttons = {"OK", "Cancel"}
+        })
+        PromptFixAttachment:Clicked(function(p)
+            if p == 1 then
+                for _, part in pairs(script.Parent.models.Rigs[RigModule.DetectRigType(rig)]:GetChildren()) do
+                    CurrentLimb = rig:FindFirstChild(part.Name)
+                    for _, attachment in pairs(part:GetChildren()) do
+                        if attachment:IsA("Attachment") then
+                            if not CurrentLimb:FindFirstChild(attachment.Name) then
+                                NewAttachment = attachment:Clone()
+                                NewAttachment.Parent = CurrentLimb
+                            end
+                        end
+                    end
+                end
+                SelectionChanged(SelectionService:Get())
+            end
+        end)
+    end
+
     PlayerIDLabel:SetDisabled(CompatibleRig)
     AutoalignButton:SetDisabled(not CompatibleAlignment)
     CreateAccessoryButton:SetDisabled(not CompatibleAccessory)
@@ -354,7 +396,7 @@ CreateAccessoryButton:Clicked(function()
         local ValidModel = false
         if model.Parent and model.Parent.Parent then
             for _, v2 in pairs(model.Parent.Parent:GetChildren()) do
-                if (model:IsA("Model") or model:IsA("BasePart")) and model.Parent:IsA("Part") and v2:IsA("Humanoid") then
+                if (model:IsA("Model") or model:IsA("BasePart")) and model.Parent:IsA("BasePart") and v2:IsA("Humanoid") then
                     ValidModel = true
                     break
                 end
@@ -362,12 +404,18 @@ CreateAccessoryButton:Clicked(function()
         end
         if ValidModel then
             local NewAccessory = Instance.new("Accessory", model.Parent.Parent)
+            if model:IsA("BasePart") then
+                local NewModel = Instance.new("Model", model.Parent)
+                model.Parent = NewModel
+                NewModel.Name = model.Name
+                model = NewModel
+            end
             NewAccessory.Name = model.Name
-            local Handle = FindHandle(model)
+            local Handle = RigModule.FindHandle(model)
             if not Handle then
                 Handle = CreateHandle(model)
             end
-            --Handle.Parent = NewAccessory
+            Handle.Parent = model
             Handle:ClearAllChildren()
             Handle.Anchored = false
             Handle.Name = "Handle"
@@ -399,10 +447,10 @@ SelectionService.SelectionChanged:Connect(function()
     ClonedWelds = {}
     for index, v1 in pairs(SelectionService:Get()) do
         SelectedActions[#SelectedActions+1] = v1.AncestryChanged:Connect(function()
-            if Widget.Content.Enabled then SelectionChanged({v1}) end
+            if Widget.Content.Enabled then SelectionChanged(SelectionService:Get()) end
         end)
         if v1:IsA("Accessory") then
-            local Handle = FindHandle(v1)
+            local Handle = RigModule.FindHandle(v1)
             if Handle then
                 for _, v2 in pairs(Handle:GetChildren()) do
                     if v2:IsA("Motor6D") or v2:IsA("Weld") then

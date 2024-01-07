@@ -1,9 +1,42 @@
+local MessagingService = game:GetService("MessagingService")
 local m = {}
 local Rigs = script.Parent.Parent.models.Rigs
 m.Convert = {}
 
+local R6AssociatedBodyParts = {
+    Head = {"Head"},
+    Torso = {"UpperTorso", "LowerTorso"},
+    ["Right Arm"] = {"RightUpperArm", "RightLowerArm", "RightHand"},
+    ["Left Arm"] = {"LeftUpperArm", "LeftLowerArm", "LeftHand"},
+    ["Right Leg"] = {"RightUpperLeg", "RightLowerLeg", "RightFoot"},
+    ["Left Leg"]= {"LeftUpperLeg", "LeftLowerLeg", "LeftFoot"},
+    HumanoidRootPart = {"HumanoidRootPart"}
+}
+
 for _, v in pairs(Rigs:GetChildren()) do
     m.Convert[v.Name] = {}
+end
+
+function m.FindFirstDescendant(model, name)
+    for _, v in pairs(model:GetDescendants()) do
+        if v.Name == name then
+            return v
+        end
+    end
+    return nil
+end
+
+function m.FindHandle(model, acceptmiddle)
+    if not (model:IsA("Model") or model:IsA("BasePart")) and not model:IsA("Accessory") then return nil end
+    local Handle = nil
+    if model:IsA("Model") then Handle = model.PrimaryPart end
+    for _, v in pairs(model:GetChildren()) do
+        local lowerName = string.lower(v.Name)
+        if v:IsA("BasePart") and (lowerName == "handle" or (acceptmiddle and lowerName == "middle")) then
+            Handle = v
+        end
+    end
+    return Handle
 end
 
 function m.Insert(rig, cf)
@@ -295,17 +328,63 @@ function m.DetectRigType(model)
     return nil
 end
 
+function m.CreateBodyColor(rig, rigtype)
+    local NewColor
+    rigtype = rigtype or m.DetectRigType(rig)
+    if not rig:FindFirstChildWhichIsA("BodyColors") then
+        NewColor = Instance.new("BodyColors")
+        if rigtype == "R6" then
+            NewColor.HeadColor3 = rig:FindFirstChild("Head").Color
+            NewColor.LeftArmColor3 = rig:FindFirstChild("Left Arm").Color
+            NewColor.LeftLegColor3 = rig:FindFirstChild("Left Leg").Color
+            NewColor.RightArmColor3 = rig:FindFirstChild("Right Arm").Color
+            NewColor.RightLegColor3 = rig:FindFirstChild("Right Leg").Color
+            NewColor.TorsoColor3 = rig:FindFirstChild("Torso").Color
+        else
+            NewColor.HeadColor3 = rig:FindFirstChild("Head").Color
+            NewColor.LeftArmColor3 = rig:FindFirstChild("LeftUpperArm").Color
+            NewColor.LeftLegColor3 = rig:FindFirstChild("LeftUpperLeg").Color
+            NewColor.RightArmColor3 = rig:FindFirstChild("RightUpperArm").Color
+            NewColor.RightLegColor3 = rig:FindFirstChild("RightUpperLeg").Color
+            NewColor.TorsoColor3 = rig:FindFirstChild("UpperTorso").Color
+        end
+        NewColor.Parent = rig
+    end
+end
+
 m.Convert.R15.S15 = function (rig)
     local HumanoidCheck = rig:FindFirstChildWhichIsA("Humanoid")
     if not HumanoidCheck or not m.DetectRigType(rig) == "R15" then
         warn("Invalid Rig")
         return
     end
-    for _, v in pairs(Rigs.S15:GetDescendants()) do
+    m.CreateBodyColor(rig, "R15")
+    local OriginalLimb
+    local NewLimb
+    for _, v in pairs(Rigs.S15:GetChildren()) do
         if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
-            HumanoidCheck:ReplaceBodyPartR15(v.Name, v:Clone())
+            OriginalLimb = rig:FindFirstChild(v.Name)
+            NewLimb = v:Clone()
+            NewLimb.Color = OriginalLimb.Color
+            NewLimb.Material = OriginalLimb.Material
+            NewLimb.Transparency = OriginalLimb.Transparency
+            NewLimb.Reflectance = OriginalLimb.Reflectance
+            for _, ChildPart in pairs(v:GetChildren()) do
+                if not (ChildPart:IsA("JointInstance") or ChildPart:IsA("Attachment") or ChildPart:IsA("SpecialMesh") or ChildPart:IsA("WrapTarget")) then
+                    ChildPart.Parent = nil
+                end
+            end
+            HumanoidCheck:ReplaceBodyPartR15(v.Name, NewLimb)
         end
     end
+    local P1Name
+    for _, v in pairs(rig:GetDescendants()) do
+        if v.Name == "AccessoryWeld" then
+            P1Name = v.Part1.Name
+            v.Part1 = m.FindFirstDescendant(rig, P1Name)
+        end
+    end
+    return {rig, true}
 end
 
 m.Convert.S15.R15 = function (rig)
@@ -314,11 +393,189 @@ m.Convert.S15.R15 = function (rig)
         warn("Invalid Rig")
         return
     end
-    for _, v in pairs(Rigs.R15:GetDescendants()) do
+    m.CreateBodyColor(rig, "S15")
+    if not rig:FindFirstChildWhichIsA("BodyColors") then
+        Instance.new("BodyColors", rig)
+    end
+    local OriginalLimb
+    local NewLimb
+    for _, v in pairs(Rigs.R15:GetChildren()) do
         if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
-            HumanoidCheck:ReplaceBodyPartR15(v.Name, v:Clone())
+            OriginalLimb = rig:FindFirstChild(v.Name)
+            NewLimb = v:Clone()
+            NewLimb.Color = OriginalLimb.Color
+            NewLimb.Material = OriginalLimb.Material
+            NewLimb.Transparency = OriginalLimb.Transparency
+            NewLimb.Reflectance = OriginalLimb.Reflectance
+            for _, ChildPart in pairs(v:GetChildren()) do
+                if not (ChildPart:IsA("JointInstance") or ChildPart:IsA("Attachment") or ChildPart:IsA("SpecialMesh") or ChildPart:IsA("WrapTarget")) then
+                    ChildPart.Parent = nil
+                end
+            end
+            HumanoidCheck:ReplaceBodyPartR15(v.Name, NewLimb)
         end
     end
+    local P1Name
+    for _, v in pairs(rig:GetDescendants()) do
+        if v.Name == "AccessoryWeld" then
+            P1Name = v.Part1.Name
+            v.Part1 = m.FindFirstDescendant(rig, P1Name)
+        end
+    end
+    return {rig, true}
+end
+
+m.Convert.R6.R15 = function (rig)
+    local HumanoidCheck = rig:FindFirstChildWhichIsA("Humanoid")
+    local CurrentPart
+    local CurrentHandle
+    local TempModel
+    local FindAttachment
+    local NoMissingAttachments = true
+    if not HumanoidCheck or not m.DetectRigType(rig) == "R6" then
+        warn("Invalid Rig")
+        return
+    end
+    m.CreateBodyColor(rig, "R6")
+    local NewRig = m.Insert("R15", rig.PrimaryPart.CFrame)
+    NewRig.Parent = rig.Parent
+    NewRig.Name = rig.Name
+    NewRig:FindFirstChildWhichIsA("Humanoid").Parent = nil
+    HumanoidCheck.Parent = NewRig
+    HumanoidCheck.RigType = Enum.HumanoidRigType.R15
+    for _, object in pairs(rig:GetChildren()) do
+        if not object:IsA("BasePart") and not object:IsA("Humanoid") then
+            if object:IsA("Accessory") then
+                CurrentHandle = m.FindHandle(object)
+                FindAttachment = CurrentHandle:FindFirstChildWhichIsA("Attachment")
+                if FindAttachment and not m.FindFirstDescendant(NewRig, FindAttachment.Name) then
+                    NoMissingAttachments = false
+                    CurrentHandle:ClearAllChildren()
+                    TempModel = Instance.new("Model", NewRig)
+                    TempModel.Name = object.Name
+                    for _, v in pairs(object:GetChildren()) do
+                        v.Parent = TempModel
+                    end
+                else
+                    object.Parent = NewRig
+                end
+            else
+                object.Parent = NewRig
+            end
+        end
+        if object:IsA("BasePart") then
+            if R6AssociatedBodyParts[object.Name] then
+                for _, R15PartName in pairs(R6AssociatedBodyParts[object.Name]) do
+                    CurrentPart = NewRig:FindFirstChild(R15PartName)
+                    CurrentPart.Color = object.Color
+                    CurrentPart.Material = object.Material
+                    CurrentPart.Transparency = object.Transparency
+                    CurrentPart.Reflectance = object.Reflectance
+                    for _, ChildPart in pairs(CurrentPart:GetChildren()) do
+                        if not (ChildPart:IsA("JointInstance") or ChildPart:IsA("Attachment") or ChildPart:IsA("SpecialMesh")) then
+                            ChildPart.Parent = nil
+                        end
+                    end
+                end
+                for _, limb_child in pairs(object:GetChildren()) do
+                    if not (limb_child:IsA("JointInstance") or limb_child:IsA("Attachment") or limb_child:IsA("SpecialMesh")) then
+                        limb_child.Parent = CurrentPart
+                    end
+                end
+            else
+                object.Parent = NewRig
+            end
+        end
+    end
+    rig.Parent = nil
+    return {NewRig, NoMissingAttachments}
+end
+
+m.Convert.R15.R6 = function (rig)
+    local HumanoidCheck = rig:FindFirstChildWhichIsA("Humanoid")
+    local CurrentPart
+    local CurrentHandle
+    local TempModel
+    local FindAttachment
+    local NoMissingAttachments = true
+    local IsLimb = false
+    if not HumanoidCheck or not m.DetectRigType(rig) == "R15" then
+        warn("Invalid Rig")
+        return
+    end
+    m.CreateBodyColor(rig, "R15")
+    local NewRig = m.Insert("R6", rig.PrimaryPart.CFrame)
+    NewRig.Parent = rig.Parent
+    NewRig.Name = rig.Name
+    NewRig:FindFirstChildWhichIsA("Humanoid").Parent = nil
+    HumanoidCheck.Parent = NewRig
+    HumanoidCheck.RigType = Enum.HumanoidRigType.R6
+    for _, object in pairs(rig:GetChildren()) do
+        if not object:IsA("BasePart") and not object:IsA("Humanoid") then
+            if object:IsA("Accessory") then
+                CurrentHandle = m.FindHandle(object)
+                FindAttachment = CurrentHandle:FindFirstChildWhichIsA("Attachment")
+                if FindAttachment and not m.FindFirstDescendant(NewRig, FindAttachment.Name) then
+                    NoMissingAttachments = false
+                    CurrentHandle:ClearAllChildren()
+                    TempModel = Instance.new("Model", NewRig)
+                    TempModel.Name = object.Name
+                    for _, v in pairs(object:GetChildren()) do
+                        v.Parent = TempModel
+                    end
+                else
+                    object.Parent = NewRig
+                end
+            else
+                object.Parent = NewRig
+            end
+        end
+        if object:IsA("BasePart") then
+            IsLimb = false
+            for R6PartName, ActualParts in pairs(R6AssociatedBodyParts) do
+                if ActualParts[1] == object.Name then
+                    CurrentPart = NewRig:FindFirstChild(R6PartName)
+                    CurrentPart.Color = object.Color
+                    CurrentPart.Material = object.Material
+                    CurrentPart.Transparency = object.Transparency
+                    CurrentPart.Reflectance = object.Reflectance
+                    for _, ChildPart in pairs(CurrentPart:GetChildren()) do
+                        if not (ChildPart:IsA("JointInstance") or ChildPart:IsA("Attachment") or ChildPart:IsA("SpecialMesh")) then
+                            ChildPart.Parent = nil
+                        end
+                    end
+                end
+                for _, ActualPart in pairs(ActualParts) do
+                    if ActualPart == object.Name then
+                        for _, limb_child in pairs(object:GetChildren()) do
+                            if not (limb_child:IsA("JointInstance") or limb_child:IsA("Attachment") or limb_child:IsA("SpecialMesh")) then
+                                limb_child.Parent = CurrentPart
+                            end
+                        end
+                        IsLimb = true
+                        break
+                    end
+                end
+            end
+            if not IsLimb then
+                object.Parent = NewRig
+            end
+        end
+    end
+    rig.Parent = nil
+    return {NewRig, NoMissingAttachments}
+end
+
+m.Convert.R6.S15 = function(rig)
+    rig = m.Convert.R6.R15(rig)
+    local rig2 = m.Convert.R15.S15(rig[1])
+    return {rig2[1], rig[2] and rig2[2]}
+end
+
+m.Convert.S15.R6 = function(rig)
+    rig = m.Convert.S15.R15(rig)
+    local rig2 = m.Convert.R15.R6(rig[1])
+    return {rig2[1], rig[2] and rig2[2]}
 end
 
 return m
