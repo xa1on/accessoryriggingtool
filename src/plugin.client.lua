@@ -276,7 +276,7 @@ SelectionChanged = function(Selection)
             v1:Destroy()
         end
     end
-    for _, v1 in pairs(Selection) do
+    for index, v1 in pairs(Selection) do
         -- Alignment Compatibility Check
         if v1:IsA("Model") or v1:IsA("BasePart") then
             CompatibleAlignment = true
@@ -344,6 +344,26 @@ SelectionChanged = function(Selection)
             CompatibleRig = true
             InsertRigButton.Textbox.Text ..= " (\"" .. v1.Name .. "\": " .. HumanoidCheck .. ") "
             SelectedRigs[#SelectedRigs+1] = v1
+        end
+
+        -- AccessoryWeld Check
+        if v1:IsA("Accessory") then
+            local Handle = RigModule.FindHandle(v1)
+            if Handle then
+                for _, v2 in pairs(Handle:GetChildren()) do
+                    if v2.Name == "AccessoryWeld" and v2:IsA("Weld") then
+                        v2.Parent = nil
+                        local p0, pcf0 = v2.Part0, v2.C0
+                        local p1, pcf1 = v2.Part1, v2.C1
+                        local New6D = Instance.new("Motor6D", Handle)
+                        New6D.Name = "AccessoryWeld"
+                        New6D.Part0 = p0
+                        New6D.Part1 = p1
+                        New6D.C0 = pcf0
+                        New6D.C1 = pcf1
+                    end
+                end
+            end
         end
     end
     if not CompatibleRig and SelectedRig then
@@ -419,20 +439,22 @@ CreateAccessoryButton:Clicked(function()
             Handle:ClearAllChildren()
             Handle.Anchored = false
             Handle.Name = "Handle"
-            WeldModel(model, Handle, true)
             local AttachmentInput = Attachments[model.Name]
             if AttachmentInput.Value ~= "" then
                 local BodyAttachment = AttachmentInput.Value[1]:Clone()
                 BodyAttachment.Parent = Handle
+                BodyAttachment.WorldCFrame = AttachmentInput.Value[1].WorldCFrame
             end
             if model:IsA("Model") then
                 for _, v in pairs(model:GetChildren()) do
-                    v.Parent = NewAccessory
+                    if v ~=  Handle then
+                        v.Parent = NewAccessory
+                    end
                 end
                 model.Parent = nil
-            else
-                Handle.Parent = NewAccessory
             end
+            WeldModel(NewAccessory, Handle, true)
+            Handle.Parent = NewAccessory
             SelectionService:Add({NewAccessory})
         end
     end
@@ -440,6 +462,7 @@ CreateAccessoryButton:Clicked(function()
 end)
 
 SelectionService.SelectionChanged:Connect(function()
+    local NewWeld
     for _, action in SelectedActions do
         action:Disconnect()
     end
@@ -463,8 +486,11 @@ SelectionService.SelectionChanged:Connect(function()
                     end
                 end
                 SelectedActions[#SelectedActions+1] = v1.AncestryChanged:Connect(function()
-                    for _, v2 in pairs(ClonedWelds[index]) do
-                        v2.Parent = Handle
+                    if v1.Parent:IsA("Humanoid") then
+                        for _, v2 in pairs(ClonedWelds[index]) do
+                            NewWeld = v2:Clone()
+                            NewWeld.Parent = Handle
+                        end
                     end
                 end)
             end
